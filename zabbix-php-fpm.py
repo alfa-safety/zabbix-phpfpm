@@ -1,12 +1,10 @@
 #!/usr/bin/env python
 # pylint: disable=W0622
 
-from os import walk, path
-import re
-import sys
-import json
 # Copyright (c) 2006 Allan Saddi <allan@saddi.com>
 # Copyright (c) 2011 Vladimir Rusinov <vladimir@greenmice.info>
+# Copyright (c) 2016 gael p <gael@alfa-safety.fr>
+
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -34,6 +32,10 @@ import json
 __author__ = 'Allan Saddi <allan@saddi.com>'
 __version__ = '$Revision$'
 
+from os import walk, path
+import re
+import sys
+import json
 import select
 import struct
 import socket
@@ -473,6 +475,8 @@ class FCGIApp(object):
         return result
 
 
+
+
 phpfpmdir = ['/etc/php-fpm53.d', '/etc/php-fpm54.d', '/etc/php-fpm55.d', '/etc/php-fpm56.d']
 webmin_root = '/etc/webmin/virtual-server/domains'
 
@@ -507,12 +511,12 @@ def find_port(berceau):
 
 def discovery():
     retour = {"data":[]}
-    # Find webmin host
+    # je cherche les berceaux
     for dirpath, dirnames, filenames in walk(webmin_root):
         for filename in filenames:
             find = False
             for line in open(path.join(dirpath, filename), 'r'):
-                m = re.search('^user\=(\w-\.+)', line)
+                m = re.search('^user\=(.+)', line)
                 if m is not None:
                     retour["data"].append({"{#PHPBERCEAU}":m.group(1)})
     return retour
@@ -523,7 +527,7 @@ if __name__ == '__main__':
         print json.dumps(retour)
     else:
         if (len(sys.argv) != 3):
-            print 'more args please'
+            print 'Nombre arguments insuffisant'
         else:
             print (phpfpmparam(port=find_port(sys.argv[1]), param=sys.argv[2]))
 
