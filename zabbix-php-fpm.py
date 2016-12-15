@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 # pylint: disable=W0622
 
 # Copyright (c) 2006 Allan Saddi <allan@saddi.com>
@@ -29,18 +30,27 @@
 # SUCH DAMAGE.
 #
 # $Id$
-__author__ = 'Allan Saddi <allan@saddi.com>'
-__version__ = '$Revision$'
 
 from os import walk, path
 import re
-import sys
 import json
 import select
 import struct
 import socket
 import errno
 import types
+import argparse
+
+phpfpmdir = ['/etc/php-fpm53.d', '/etc/php-fpm54.d',
+             '/etc/php-fpm55.d', '/etc/php-fpm56.d']
+webmin_root = '/etc/webmin/virtual-server/domains'
+
+CONFIGFILE = '/etc/as/zabbix-php-fpm.json'
+
+
+__author__ = 'Allan Saddi <allan@saddi.com>'
+__version__ = '$Revision$'
+
 
 __all__ = ['FCGIApp']
 
@@ -211,13 +221,13 @@ class Record(object):
             raise EOFError
 
         self.version, self.type, self.requestId, self.contentLength, \
-                      self.paddingLength = struct.unpack(FCGI_Header, header)
+         self.paddingLength = struct.unpack(FCGI_Header, header)
 
         if __debug__:
             _debug(9, 'read: fd = %d, type = %d, requestId = %d, '
-                             'contentLength = %d' %
-                             (sock.fileno(), self.type, self.requestId,
-                              self.contentLength))
+                   'contentLength = %d' %
+                   (sock.fileno(), self.type, self.requestId,
+                    self.contentLength))
 
         if self.contentLength:
             try:
@@ -259,9 +269,9 @@ class Record(object):
 
         if __debug__:
             _debug(9, 'write: fd = %d, type = %d, requestId = %d, '
-                             'contentLength = %d' %
-                             (sock.fileno(), self.type, self.requestId,
-                              self.contentLength))
+                   'contentLength = %d' %
+                   (sock.fileno(), self.type, self.requestId,
+                    self.contentLength))
 
         header = struct.pack(FCGI_Header, self.version, self.type,
                              self.requestId, self.contentLength,
@@ -311,12 +321,10 @@ class FCGIApp(object):
         self._fcgiParams(sock, requestId, {})
 
         # Transfer wsgi.input to FCGI_STDIN
-        #content_length = int(environ.get('CONTENT_LENGTH') or 0)
+        # content_length = int(environ.get('CONTENT_LENGTH') or 0)
         s = ''
         while True:
-            #chunk_size = min(content_length, 4096)
-            #s = environ['wsgi.input'].read(chunk_size)
-            #content_length -= len(s)
+
             rec = Record(FCGI_STDIN, requestId)
             rec.contentData = s
             rec.contentLength = len(s)
@@ -345,7 +353,6 @@ class FCGIApp(object):
             elif inrec.type == FCGI_STDERR:
                 # Simply forward to wsgi.errors
                 err += inrec.contentData
-                #environ['wsgi.errors'].write(inrec.contentData)
             elif inrec.type == FCGI_END_REQUEST:
                 # TODO: Process appStatus/protocolStatus fields?
                 break
@@ -393,8 +400,8 @@ class FCGIApp(object):
         result = result[pos:]
 
         # Set WSGI status, headers, and return result.
-        #start_response(status, headers)
-        #return [result]
+        # start_response(status, headers)
+        # return [result]
 
         return status, headers, result, err
 
@@ -439,7 +446,6 @@ class FCGIApp(object):
         return result
 
     def _fcgiParams(self, sock, requestId, params):
-        #print params
         rec = Record(FCGI_PARAMS, requestId)
         data = []
         for name, value in params.items():
@@ -475,14 +481,9 @@ class FCGIApp(object):
         return result
 
 
-
-
-phpfpmdir = ['/etc/php-fpm53.d', '/etc/php-fpm54.d', '/etc/php-fpm55.d', '/etc/php-fpm56.d']
-webmin_root = '/etc/webmin/virtual-server/domains'
-
-def phpfpmparam(port, param):
-    fcgi = FCGIApp(host='127.0.0.1', port=port)
-    script = "/php-fpm-%d" % (port)
+def phpfpmparam(port, param, host, url):
+    fcgi = FCGIApp(host=host, port=port)
+    script = url
     query = 'json'
     env = {
         'SCRIPT_NAME': script,
@@ -490,7 +491,7 @@ def phpfpmparam(port, param):
         'QUERY_STRING': query,
         'REQUEST_METHOD': 'GET'}
     code, headers, out, err = fcgi(env)
-    return(json.loads(out)[param.replace ("_", " ")])
+    return(json.loads(out)[param.replace("_", " ")])
 
 
 def find_port(berceau):
@@ -507,28 +508,85 @@ def find_port(berceau):
                         try:
                             return int(port)
                         except ValueError:
+                            print("error during config parse")
                             return None
 
-def discovery():
-    retour = {"data":[]}
-    # je cherche les berceaux
+
+def discover():
+    retour = {"data": []}
+        # je cherche les berceaux
     for dirpath, dirnames, filenames in walk(webmin_root):
         for filename in filenames:
-            find = False
             for line in open(path.join(dirpath, filename), 'r'):
                 m = re.search('^user\=(.+)', line)
                 if m is not None:
-                    retour["data"].append({"{#PHPBERCEAU}":m.group(1)})
+                    retour["data"].append({"{#PHPBERCEAU}": m.group(1)})
     return retour
 
+
 if __name__ == '__main__':
-    if (len(sys.argv) ==2 ):
-        retour = discovery()
-        print json.dumps(retour)
+    parser = argparse.ArgumentParser(description='php-fpm status requester')
+    parser.add_argument('--discovery',
+                        action="store_true",
+                        help='parse config')
+    parser.add_argument('--port',
+                        action="store_true",
+                        help='specify port instead of config name')
+    parser.add_argument('--host',
+                        default="127.0.0.1",
+                        help='specify php-fpm host')
+    parser.add_argument('--url',
+                        help='defaut is /php-fpm-[port-number]')
+    parser.add_argument('config',
+                        nargs='?',
+                        help='config/port keyword')
+    parser.add_argument('command',
+                        nargs='?',
+                        help='config/port keyword')
+    args = parser.parse_args()
+
+    port = None
+    url = None
+    discovery = None
+    configload = False
+    try:
+        with open(CONFIGFILE) as json_data:
+            d = json.load(json_data)
+            if "url" in d:
+                url = d["url"]
+            if "host" in d:
+                host = d["host"]
+            if "discovery" in d:
+                discovery = d["discovery"]
+    except ValueError:
+        print("Erreur dans le fichier de config %s" % (CONFIGFILE))
+        exit(-1)
+    except IOError:
+        print("pas de fichier de conf")
+
+    if args.discovery:
+        if (discovery is None):
+            discovery = discover()
+        print json.dumps(discovery)
+
     else:
-        if (len(sys.argv) != 3):
-            print 'Nombre arguments insuffisant'
+        if (args.command is None) or (args.config is None):
+            parser.print_help()
         else:
-            print (phpfpmparam(port=find_port(sys.argv[1]), param=sys.argv[2]))
-
-
+            if (discovery is not None):
+                port = int(args.config)
+            elif (discovery is None):
+                port = find_port(args.config)
+                if (port is None):
+                    print("Impossible de récupérer le port, Bye!")
+                    exit(-1)
+            if ((args.url is None) & (url is None)):
+                url = "/php-fpm-%d" % (port)
+            elif (url is None):
+                url = args.url
+            if (host is None):
+                host = args.host
+            print (phpfpmparam(port=port,
+                               param=args.command,
+                               host=host, url=url))
+    exit(0)

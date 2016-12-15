@@ -1,0 +1,5 @@
+{
+    "discovery": {"data": [{"{#PHPBERCEAU}": "9000"}]},
+    "host" : "172.17.0.3",
+    "url": "/status"
+}
